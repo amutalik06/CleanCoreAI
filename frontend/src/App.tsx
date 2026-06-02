@@ -276,6 +276,26 @@ export default function App() {
   const [atcSortDir, setAtcSortDir] = useState<'asc' | 'desc'>('asc');
   const [atcRunPackage, setAtcRunPackage] = useState('');
   
+  // API base URL configuration state
+  const [apiUrlInput, setApiUrlInput] = useState(() => {
+    return localStorage.getItem('CLEANCORE_API_URL') || 'http://localhost:8000';
+  });
+
+  const handleSaveApiUrl = () => {
+    if (!apiUrlInput.trim()) {
+      localStorage.removeItem('CLEANCORE_API_URL');
+    } else {
+      localStorage.setItem('CLEANCORE_API_URL', apiUrlInput.trim());
+    }
+    window.location.reload();
+  };
+
+  const handleResetApiUrl = () => {
+    localStorage.removeItem('CLEANCORE_API_URL');
+    setApiUrlInput('http://localhost:8000');
+    window.location.reload();
+  };
+
   // Package explorer state
   const [packageName, setPackageName] = useState('ZCUSTOM');
   const [packageObjects, setPackageObjects] = useState<any[]>([]);
@@ -633,6 +653,32 @@ export default function App() {
               <Cable size={24} aria-hidden="true" />
               SAP System Connection
             </h2>
+
+            <div className="card" style={{ maxWidth: 620, marginBottom: 'var(--space-lg)' }}>
+              <div className="card-title" style={{ marginBottom: 4 }}>Backend API URL Configuration</div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 'var(--sapContent_Space_Medium)' }}>
+                Configure the API URL of your local CleanCore AI backend. The frontend will communicate with this URL.
+              </p>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Backend URL</label>
+                <div style={{ display: 'flex', gap: 'var(--sapContent_Gap)' }}>
+                  <input
+                    id="backend-api-url-input"
+                    className="form-input"
+                    value={apiUrlInput}
+                    onChange={e => setApiUrlInput(e.target.value)}
+                    placeholder="http://localhost:8000"
+                    style={{ flex: 1 }}
+                  />
+                  <button className="btn btn-primary" onClick={handleSaveApiUrl}>
+                    Save
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleResetApiUrl}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <div className="card" style={{ maxWidth: 620 }}>
               {/* ── ADT PRIMARY SECTION ── */}

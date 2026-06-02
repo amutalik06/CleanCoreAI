@@ -817,11 +817,19 @@ class ADTRestClient:
                 elif ctag in ("findingCount", "findingsCount", "numberOfFindings") and ctext:
                     findings_count_str = ctext
                 elif ctag == "aggregates":
+                    prio_sum = 0
                     for inner_child in child:
                         ictag = inner_child.tag.split("}")[-1] if "}" in inner_child.tag else inner_child.tag
                         ictext = (inner_child.text or "").strip()
                         if ictag in ("findingCount", "findingsCount", "numberOfFindings") and ictext:
                             findings_count_str = ictext
+                        elif ictag.startswith("numPrio") or ictag == "numFailure":
+                            try:
+                                prio_sum += int(ictext)
+                            except ValueError:
+                                pass
+                    if prio_sum > 0:
+                        findings_count_str = str(prio_sum)
 
             # For Atom <entry> format, look in child elements
             if tag == "entry":

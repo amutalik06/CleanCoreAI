@@ -3,7 +3,23 @@
  */
 import type { SAPConnection, SAPConnectionStatus, AnalysisSession, SAPATCResult, SAPPackageObject, ATCFinding } from '../types';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api/v1';
+const getApiBase = (): string => {
+  const storedUrl = localStorage.getItem('CLEANCORE_API_URL');
+  if (storedUrl) {
+    return `${storedUrl}/api/v1`;
+  }
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    return `${envUrl}/api/v1`;
+  }
+  // Fallback to local API when deployed on external hosts (like Vercel)
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'http://localhost:8000/api/v1';
+  }
+  return '/api/v1';
+};
+
+const API_BASE = getApiBase();
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
