@@ -1,0 +1,124 @@
+    async def get_atc_worklist_findings(self, result_id: str) -> List[Dict[str, Any]]:
+        """Fetch all findings for a specific ATC worklist/result ID."""
+        import uuid
+        clean_id = result_id.strip()
+        is_central_display = len(clean_id) == 32 and "-" not in clean_id
+
+        target_id = clean_id
+        if is_central_display:
+            session_uuid = str(uuid.uuid4())
+            logger.info("Associating central result display ID %s with new worklist session %s via PUT", clean_id, session_uuid)
+            assoc_path = f"/sap/bc/adt/atc/result/worklist/{session_uuid}/{clean_id}"
+            try:
+                # Use application/atc.worklist.v1+xml Accept header for association
+                put_resp = await self._request("PUT", assoc_path, accept="application/atc.worklist.v1+xml")
+                logger.debug("PUT association response: HTTP %d", put_resp.status_code)
+                if put_resp.status_code in (200, 201, 204):
+                    target_id = session_uuid
+                else:
+                    logger.warning("Association failed (status %d), attempting direct get", put_resp.status_code)
+            except Exception as e:
+                logger.error("Exception during PUT association: %s", e)
+
+        accept_headers = [
+            "application/atc.worklist.v1+xml",
+            "application/vnd.sap.atc.worklist.v1+xml",
+            "application/xml",
+            "application/atom+xml",
+        ]
+        
+        resp = None
+        for accept in accept_headers:
+            resp = await self._request(
+                "GET",
+                f"/sap/bc/adt/atc/worklists/{target_id}",
+                accept=accept,
+            )
+            if resp.status_code == 200 and resp.text.strip():
+                logger.debug("ATC worklist %s fetched with Accept: %s", target_id, accept)
+                break
+            logger.debug(
+                "ATC worklist %s with Accept %s → HTTP %d",
+                target_id, accept, resp.status_code,
+            )
+        
+        if not resp or resp.status_code != 200:
+            status = resp.status_code if resp else 0
+            logger.warning("Failed to fetch ATC worklist findings for %s: HTTP %d", target_id, status)
+            return []
+
+        findings = []
+        try:
+            root = ET.fromstring(resp.text)
+            
+            def _get_attr(elem, local_name):
+                for ns in ("", "{http://www.sap.com/adt/atc/finding}", "{http://www.sap.com/adt/core}", "{http://www.sap.com/adt/atc}"):
+                    val = elem.get(f"{ns}{local_name}")
+                    if val is not None:
+                        return val
+                return None
+
+            for obj_elem in root.iter():
+                obj_tag = obj_elem.tag.split("}")[-1] if "}" in obj_elem.tag else obj_elem.tag
+                if obj_tag != "object":
+                    continue
+                
+                obj_name = obj_elem.get("name") or obj_elem.get("{http://www.sap.com/adt/core}name") or ""
+                obj_type_raw = obj_elem.get("type") or obj_elem.get("{http://www.sap.com/adt/core}type") or ""
+                obj_type = obj_type_raw.split("/")[0] if obj_type_raw else "PROG"
+                package_name = obj_elem.get("packageName") or ""
+                
+                for finding_elem in obj_elem.iter():
+                    find_tag = finding_elem.tag.split("}")[-1] if "}" in finding_elem.tag else finding_elem.tag
+                    if find_tag != "finding":
+                        continue
+                    
+                    check_id = _get_attr(finding_elem, "checkId") or ""
+                    check_title = _get_attr(finding_elem, "checkTitle") or ""
+                    message = _get_attr(finding_elem, "messageTitle") or _get_attr(finding_elem, "message") or ""
+                    priority = _get_attr(finding_elem, "priority") or "3"
+                    uri = _get_attr(finding_elem, "uri") or ""
+                    location_uri = _get_attr(finding_elem, "location") or ""
+                    quick_fix_info = _get_attr(finding_elem, "quickfixInfo") or _get_attr(finding_elem, "quickFixAvailable")
+                    
+                    finding = {
+                        "object_name": obj_name,
+                        "object_type": obj_type,
+                        "package_name": package_name,
+                        "checkId": check_id,
+                        "checkTitle": check_title,
+                        "message": message,
+                        "priority": priority,
+                        "uri": uri,
+                        "quickFixAvailable": bool(quick_fix_info) or (quick_fix_info == "true"),
+                    }
+                    
+                    # Parse location
+                    line_num = 0
+                    if location_uri:
+                        line_match = re.search(r"#start=(\d+)", location_uri)
+                        if line_match:
+                            line_num = int(line_match.group(1))
+                            
+                    location = {"uri": location_uri, "line": line_num}
+                    
+                    # Fallback to children elements if needed
+                    for child in finding_elem:
+                        child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                        if child_tag == "location":
+                            location["uri"] = child.get("uri", location_uri)
+                            uri_text = child.get("uri", "")
+                            line_match = re.search(r"#start=(\d+)", uri_text)
+                            if line_match:
+                                location["line"] = int(line_match.group(1))
+                        elif child_tag == "quickfixes":
+                            finding["quickFixAvailable"] = True
+                            
+                    finding["location"] = location
+                    finding["line"] = location.get("line", 0)
+                    finding["column"] = location.get("column", 0)
+                    findings.append(finding)
+        except ET.ParseError:
+            logger.warning("Could not parse ATC worklist XML")
+            
+        return findings

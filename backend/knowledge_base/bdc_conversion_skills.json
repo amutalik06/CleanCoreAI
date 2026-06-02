@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "description": "BDC to BAPI/API conversion skills for CleanCore AI. Extends the built-in mapping table.",
+  "mappings": [
+    {
+      "tcode": "VL02N",
+      "bapi": "BAPI_OUTB_DELIVERY_CHANGE",
+      "description": "Change Outbound Delivery",
+      "domain": "Logistics Execution",
+      "sap_notes": ["2220005"],
+      "params": {
+        "exporting": ["header_data", "header_control", "delivery"],
+        "tables": ["item_data", "item_control", "return"]
+      },
+      "commit": true
+    },
+    {
+      "tcode": "MIRO",
+      "bapi": "BAPI_INCOMINGINVOICE_CREATE",
+      "description": "Enter Incoming Invoice",
+      "domain": "Invoice Verification",
+      "sap_notes": ["2220005"],
+      "params": {
+        "exporting": ["headerdata"],
+        "importing": ["invoicedocnumber", "fiscalyear"],
+        "tables": ["itemdata", "return"]
+      },
+      "commit": true
+    },
+    {
+      "tcode": "PA30",
+      "bapi": "BAPI_EMPLOYEET_ENQUEUE / HR_INFOTYPE_OPERATION",
+      "description": "Maintain HR Master Data",
+      "domain": "Human Resources",
+      "sap_notes": ["2220005"],
+      "params": {
+        "exporting": ["infotype", "number", "subtype", "record"],
+        "importing": ["return"]
+      },
+      "commit": true
+    }
+  ],
+  "bdc_patterns": {
+    "call_transaction": {
+      "pattern": "CALL TRANSACTION '<tcode>' USING <bdcdata> MODE '<mode>' UPDATE '<update>'",
+      "modes": {
+        "A": "Visible (dialog mode)",
+        "E": "Errors only",
+        "N": "Background (no screens)",
+        "P": "Background with debugging"
+      },
+      "updates": {
+        "A": "Asynchronous",
+        "S": "Synchronous",
+        "L": "Local update"
+      }
+    },
+    "bdc_dynpro": {
+      "description": "Screen identification helper subroutine",
+      "typical_signature": "PERFORM bdc_dynpro USING <program> <screen_number>"
+    },
+    "bdc_field": {
+      "description": "Field value mapping helper subroutine",
+      "typical_signature": "PERFORM bdc_field USING <field_name> <field_value>"
+    }
+  },
+  "clean_core_guidelines": [
+    "BDC (Batch Data Communication) is considered legacy screen automation and is NOT Clean Core compliant.",
+    "All CALL TRANSACTION ... USING bdcdata statements must be replaced with equivalent BAPI or standard API calls.",
+    "BAPIs provide a stable, documented interface that survives SAP upgrades and screen changes.",
+    "After BAPI calls, always check the RETURN table for errors and call BAPI_TRANSACTION_COMMIT or BAPI_TRANSACTION_ROLLBACK.",
+    "For transactions with no direct BAPI equivalent, consider using CL_BCS (mail), CL_GUI_FRONTEND_SERVICES (file), or custom RFC-enabled FMs."
+  ]
+}

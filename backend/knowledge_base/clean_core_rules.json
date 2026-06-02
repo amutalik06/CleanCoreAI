@@ -1,0 +1,14 @@
+[
+  {"category": "obsolete_table", "rule": "Replace deprecated table with CDS view or new table per SAP Note"},
+  {"category": "open_sql", "rule": "Add ORDER BY PRIMARY KEY for SELECT INTO TABLE on HANA"},
+  {"category": "open_sql", "rule": "Replace SELECT * with explicit field list"},
+  {"category": "matnr_length", "rule": "MATNR is 40 chars in S/4HANA. Check CHAR18 references and adjust"},
+  {"category": "deprecated_api", "rule": "Replace deprecated FM with modern class/method equivalent"},
+  {"category": "cluster_table", "rule": "Replace cluster/pool table access with new transparent table"},
+  {"category": "deprecated_statement", "rule": "Replace obsolete ABAP keywords with modern equivalents"},
+  {"category": "clean_core_conversion", "rule": "Replace BDC CALL TRANSACTION with equivalent BAPI or standard API call. BDC is NOT Clean Core compliant."},
+  {"category": "clean_core_conversion", "rule": "Replace classic ALV (REUSE_ALV_GRID_DISPLAY) with CL_SALV_TABLE or RAP + Fiori Elements for new UI paradigm."},
+  {"category": "clean_core_conversion", "rule": "Refactor Module Pool programs to extract business logic into API-consumable classes for Fiori compatibility."},
+  {"category": "clean_core_conversion", "rule": "After BAPI calls, always check RETURN table for errors and call BAPI_TRANSACTION_COMMIT or ROLLBACK."},
+  {"category": "clean_core_conversion", "rule": "For BDC → BAPI conversion, map BDC screen field values to BAPI parameter structures. Refer to SAP Note 2220005."}
+]

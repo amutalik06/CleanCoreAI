@@ -1,0 +1,31 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Logs and debug files
+*.log
+*.err
+*.trc
+
+# Python env and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+ENV/
+
+# Local/Secret configurations
+.env
+backend/.env
+
+# OS/IDE metadata
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
