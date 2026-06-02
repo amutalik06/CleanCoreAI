@@ -1142,58 +1142,120 @@ class ADTRestClient:
         return objects
 
     async def get_objects_by_package(self, package_name: str, max_results: int = 5000) -> List[Dict[str, Any]]:
-        """List exact repository objects in a package."""
-        package = package_name.strip().upper()
-        resp = await self._request(
-            "POST",
-            "/sap/bc/adt/repository/nodestructure",
-            params={"parent_name": package, "parent_type": "DEVC/K"},
-            headers={"Content-Type": "application/vnd.sap.as+xml"},
-            accept="application/vnd.sap.as+xml",
-            timeout=120.0,
-        )
-        if resp.status_code == 200 and resp.text.strip():
-            objects = self._parse_package_tree(resp.text, package)
-            if objects:
-                return objects
-
-        logger.warning(
-            "ADT package tree for %s returned HTTP %d with %d bytes; trying strict search fallback",
-            package,
-            resp.status_code,
-            len(resp.text),
-        )
-
-        params: Dict[str, str] = {
-            "operation": "quickSearch",
-            "query": "*",
-            "package": package,
-            "maxResults": str(max_results),
-        }
-        resp = await self._request(
-            "GET",
-            "/sap/bc/adt/repository/informationsystem/search",
-            params=params,
-            timeout=120.0,
-        )
-        if resp.status_code != 200:
-            logger.warning("Search by package %s failed: HTTP %d", package_name, resp.status_code)
+        """List repository objects in a package and all its sub-packages using fast recursive traversal."""
+        root_package = package_name.strip().upper()
+        if not root_package:
             return []
 
-        objects = []
-        for obj in self._parse_search_results(resp.text):
-            adt_type = obj.get("type", "").upper()
-            obj_package = obj.get("package", "").upper()
-            if obj_package and obj_package != package:
+        visited: set[str] = set()
+        queue: List[str] = [root_package]
+        all_objects: List[Dict[str, Any]] = []
+        max_packages_to_traverse = 50
+
+        while queue and len(visited) < max_packages_to_traverse:
+            current_pkg = queue.pop(0)
+            if current_pkg in visited:
                 continue
-            if adt_type.startswith("DEVC/"):
-                continue
-            if not _source_supported(adt_type):
-                continue
-            objects.append({
-                **obj,
-                "type": _simple_object_type(adt_type),
-                "adt_type": adt_type,
-                "source_supported": True,
-            })
-        return objects
+            visited.add(current_pkg)
+
+            try:
+                resp = await self._request(
+                    "POST",
+                    "/sap/bc/adt/repository/nodestructure",
+                    params={"parent_name": current_pkg, "parent_type": "DEVC/K"},
+                    headers={"Content-Type": "application/vnd.sap.as+xml"},
+                    accept="application/vnd.sap.as+xml",
+                    timeout=30.0,
+                )
+                if resp.status_code != 200 or not resp.text.strip():
+                    continue
+
+                # Parse objects in this package node
+                root = ET.fromstring(resp.text)
+                for node in root.iter():
+                    tag = node.tag.split("}")[-1] if "}" in node.tag else node.tag
+                    if tag != "SEU_ADT_REPOSITORY_OBJ_NODE":
+                        continue
+
+                    values: Dict[str, str] = {}
+                    for child in node:
+                        child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                        values[child_tag] = (child.text or "").strip()
+
+                    adt_type = values.get("OBJECT_TYPE", "").upper()
+                    if not adt_type:
+                        continue
+
+                    # Queue sub-packages for recursive traversal
+                    if adt_type.startswith("DEVC/"):
+                        sub_pkg = values.get("OBJECT_NAME") or values.get("TECH_NAME")
+                        if sub_pkg and sub_pkg.upper() not in visited:
+                            queue.append(sub_pkg.upper())
+                        continue
+
+                    name = values.get("OBJECT_NAME") or values.get("TECH_NAME")
+                    if not name:
+                        continue
+
+                    uri = values.get("OBJECT_URI", "")
+                    simple_type = _simple_object_type(adt_type)
+                    if simple_type and simple_type not in SOURCE_SUPPORTED_OBJECT_TYPES:
+                        continue
+
+                    all_objects.append({
+                        "name": name,
+                        "type": simple_type,
+                        "package": current_pkg,
+                        "uri": uri,
+                        "adt_type": adt_type,
+                        "description": values.get("DESCRIPTION", ""),
+                        "source_supported": _source_supported(adt_type),
+                    })
+            except Exception as exc:
+                logger.error("Recursive nodestructure traversal failed for %s: %s", current_pkg, exc)
+
+        # If we traversed nothing (perhaps ADT nodestructure failed completely or is blocked),
+        # but the root package is valid, we can keep the search fallback as a safe backup.
+        # But to avoid slow timeouts for non-existent/empty packages, we check if package exists first.
+        if not all_objects and root_package not in visited:
+            try:
+                pkgs = await self.search_objects(query=root_package, object_type="DEVC")
+                exists = any(p.get("name", "").upper() == root_package for p in pkgs)
+                if not exists:
+                    logger.warning("Package %s does not exist in SAP repository", root_package)
+                    return []
+            except Exception as e:
+                logger.warning("Failed to check if package %s exists: %s", root_package, e)
+                # Proceed to search fallback if existence check fails
+
+            logger.warning("Nodestructure returned empty; trying strict search fallback for package %s", root_package)
+            params: Dict[str, str] = {
+                "operation": "quickSearch",
+                "query": "*",
+                "package": root_package,
+                "maxResults": str(max_results),
+            }
+            resp = await self._request(
+                "GET",
+                "/sap/bc/adt/repository/informationsystem/search",
+                params=params,
+                timeout=120.0,
+            )
+            if resp.status_code == 200:
+                for obj in self._parse_search_results(resp.text):
+                    adt_type = obj.get("type", "").upper()
+                    obj_package = obj.get("package", "").upper()
+                    if obj_package and obj_package != root_package:
+                        continue
+                    if adt_type.startswith("DEVC/"):
+                        continue
+                    if not _source_supported(adt_type):
+                        continue
+                    all_objects.append({
+                        **obj,
+                        "type": _simple_object_type(adt_type),
+                        "adt_type": adt_type,
+                        "source_supported": True,
+                    })
+
+        return all_objects

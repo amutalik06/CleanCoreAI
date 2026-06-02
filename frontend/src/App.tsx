@@ -297,7 +297,7 @@ export default function App() {
   };
 
   // Package explorer state
-  const [packageName, setPackageName] = useState('ZCUSTOM');
+  const [packageName, setPackageName] = useState('ZCONV');
   const [packageObjects, setPackageObjects] = useState<any[]>([]);
   const [selectedObjects, setSelectedObjects] = useState<Record<string, boolean>>({});
 
